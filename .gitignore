@@ -1,3 +1,3 @@
-./LinkModification/obj
-./LinkModification/bin
-./.idea
+./LinkModification/obj/
+./LinkModification/bin/
+./.idea/
