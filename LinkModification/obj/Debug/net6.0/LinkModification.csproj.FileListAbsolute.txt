@@ -1,0 +1,10 @@
+E:\AUCode\LinkModification\LinkModification\obj\Debug\net6.0\LinkModification.csproj.AssemblyReference.cache
+E:\AUCode\LinkModification\LinkModification\obj\Debug\net6.0\LinkModification.GeneratedMSBuildEditorConfig.editorconfig
+E:\AUCode\LinkModification\LinkModification\obj\Debug\net6.0\LinkModification.AssemblyInfoInputs.cache
+E:\AUCode\LinkModification\LinkModification\obj\Debug\net6.0\LinkModification.AssemblyInfo.cs
+E:\AUCode\LinkModification\LinkModification\obj\Debug\net6.0\LinkModification.csproj.CoreCompileInputs.cache
+E:\AUCode\LinkModification\LinkModification\bin\Debug\net6.0\LinkModification.deps.json
+E:\AUCode\LinkModification\LinkModification\bin\Debug\net6.0\LinkModification.dll
+E:\AUCode\LinkModification\LinkModification\obj\Debug\net6.0\LinkModification.dll
+E:\AUCode\LinkModification\LinkModification\obj\Debug\net6.0\refint\LinkModification.dll
+E:\AUCode\LinkModification\LinkModification\obj\Debug\net6.0\ref\LinkModification.dll
