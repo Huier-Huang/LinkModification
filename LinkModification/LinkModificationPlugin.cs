@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using AmongUs.Data;
 using BepInEx;
@@ -9,9 +10,14 @@ using HarmonyLib;
 using Hazel;
 using Hazel.Dtls;
 using Hazel.Udp;
+using Il2CppInterop.Runtime;
+using Il2CppInterop.Runtime.Attributes;
+using Il2CppInterop.Runtime.InteropTypes;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Il2CppSystem;
 using Il2CppSystem.Security.Cryptography.X509Certificates;
 using InnerNet;
+using MonoMod.Utils;
 using IPAddress = Il2CppSystem.Net.IPAddress;
 using IPEndPoint = Il2CppSystem.Net.IPEndPoint;
 
@@ -45,6 +51,8 @@ public partial class LinkModificationPlugin : BasePlugin
         DtlToUDP = DtlToUDPEntry.Value;
         AddDtlCertificate = AddDtlCertificateEntry.Value;
         authConnectToUdp = authConnectToUdpEntry.Value;
+        
+        Il2CppInterop.Runtime.Injection.ClassInjector.RegisterTypeInIl2Cpp<DataReceivedEventArgs>();
 
         if (AddDtlCertificate)
         {
@@ -85,7 +93,7 @@ public static class PatchClass
     [HarmonyPrefix]
     public static bool OnGetConnectionDataPatch(
         [HarmonyArgument(1)] string matchmakerToken,
-        ref byte[] __result
+        ref Il2CppStructArray<byte> __result
     )
     {
         if (!LinkModificationPlugin.DtlToUDP) return true;
@@ -100,6 +108,7 @@ public static class PatchClass
         messageWriter.Write(DestroyableSingleton<EOSManager>.Instance.FriendCode ?? string.Empty);
 
         __result = messageWriter.ToByteArray(true);
+        messageWriter.Recycle();
         return false;
     }
 
@@ -169,7 +178,9 @@ public static class PatchClass
                 Array.Empty<Object>()));
         instance.isConnecting = false;
     }
-
+    
+    [HarmonyPatch]
+    
     private static IEnumerator CoConnect(InnerNetClient instance, string matchmakerToken)
     {
         if (instance.AmConnected) yield break;
@@ -206,7 +217,10 @@ public static class PatchClass
             instance.connection.KeepAliveInterval = 1000;
             instance.connection.DisconnectTimeoutMs = 7500;
             instance.connection.ResendPingMultiplier = 1.2f;
-            instance.connection.DataReceived += (Action<DataReceivedEventArgs>)instance.OnMessageReceived;
+            var res = new DataReceive(instance.connection)
+            {
+                Action = n => instance.OnMessageReceived(new DataReceivedEventArgs(n.Sender, n.Message, n.SendOption))
+            };
             instance.connection.Disconnected += (EventHandler<DisconnectedEventArgs>)instance.OnDisconnect;
 
             var dispatcher = instance.Dispatcher;
@@ -246,10 +260,76 @@ public static class PatchClass
 
         _clientConnection = new UnityUdpClientConnection(new UnityLogger().Cast<ILogger>(),
             new IPEndPoint(IPAddress.Parse(targetIp), targetPort));
-        _clientConnection = AuthManager.CreateDtlsConnection(targetIp, targetPort);
-        _clientConnection.DataReceived += (Action<DataReceivedEventArgs>)instance.Connection_DataReceived;
+        var res = new DataReceive(_clientConnection)
+        {
+            Action = Connection_DataReceived
+        };
         _clientConnection.Disconnected += (EventHandler<DisconnectedEventArgs>)instance.Connection_Disconnected;
         _clientConnection.ConnectAsync(instance.BuildData(matchmakerToken));
         while (instance.connection is { State: ConnectionState.Connecting }) yield return null;
     }
+    
+    private static void Connection_DataReceived(DataReceive dataReceive)
+    {
+        var message = dataReceive.Message;
+        try
+        {
+            var messageReader = message.ReadMessage();
+            if (messageReader.Tag != 1) return;
+            AuthManager.Instance.LastNonceReceived = (Nullable<uint>)messageReader.ReadUInt32();
+            _clientConnection.Disconnect("Job done", null);
+        }
+        finally
+        {
+            message.Recycle();
+        }
+    }
+
+    [HarmonyPatch(typeof(Connection), nameof(Connection.Dispose), [typeof(bool)]), HarmonyPostfix]
+    public static void OnDispose(Connection __instance)
+    {
+        DataReceive.AllReceives.RemoveAll(n => n.Sender == __instance);
+    }
+
+    [HarmonyPatch(typeof(Connection), nameof(Connection.InvokeDataReceived)), HarmonyPrefix]
+    public static bool OnDataReceived(
+        Connection __instance, 
+        [HarmonyArgument(0)]MessageReader msg,
+        [HarmonyArgument(1)]SendOption sendOption
+        )
+    {
+        if (!DataReceive.AllReceives.Exists(n => n.Sender == __instance))
+        {
+            return true;
+        }
+
+        var receives = DataReceive.AllReceives.FindAll(n => n.Sender == __instance);
+        receives.Do(data =>
+        {
+            data.Message = msg;
+            data.SendOption = sendOption;
+            data.Invoke();
+        });
+
+        return false;
+    }
+}
+
+public class DataReceive
+{
+    public static readonly List<DataReceive> AllReceives = [];
+    
+    public readonly Connection Sender;
+    public MessageReader Message { get; set; }
+    public SendOption SendOption { get; set; } 
+
+    public System.Action<DataReceive> Action { get; set; }
+
+    public DataReceive(Connection sender)
+    {
+        Sender = sender;
+        AllReceives.Add(this);
+    }
+
+    public void Invoke() => Action.Invoke(this);
 }

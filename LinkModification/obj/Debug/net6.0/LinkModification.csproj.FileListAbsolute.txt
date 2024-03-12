@@ -8,3 +8,4 @@ E:\AUCode\LinkModification\LinkModification\bin\Debug\net6.0\LinkModification.dl
 E:\AUCode\LinkModification\LinkModification\obj\Debug\net6.0\LinkModification.dll
 E:\AUCode\LinkModification\LinkModification\obj\Debug\net6.0\refint\LinkModification.dll
 E:\AUCode\LinkModification\LinkModification\obj\Debug\net6.0\ref\LinkModification.dll
+E:\AUCode\LinkModification\LinkModification\obj\Debug\net6.0\LinkModification.sourcelink.json
