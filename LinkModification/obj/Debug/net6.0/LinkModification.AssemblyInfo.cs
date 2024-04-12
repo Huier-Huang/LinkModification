@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MengChu")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0-dev+fd74f73a2c6fb79a57fcf3e1193b7222c3340bd9")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0-dev+efbc574aad0b771638391a53aa753faad8a7d9d2")]
 [assembly: System.Reflection.AssemblyProductAttribute("LinkModification")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LinkModification")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

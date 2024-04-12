@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using AmongUs.Data;
 using BepInEx;
 using BepInEx.Configuration;
@@ -18,8 +19,14 @@ using Il2CppSystem;
 using Il2CppSystem.Security.Cryptography.X509Certificates;
 using InnerNet;
 using MonoMod.Utils;
+using UnityEngine;
+using UnityEngine.Events;
+using UnityEngine.SceneManagement;
+using ILogger = Hazel.ILogger;
 using IPAddress = Il2CppSystem.Net.IPAddress;
 using IPEndPoint = Il2CppSystem.Net.IPEndPoint;
+using Object = Il2CppSystem.Object;
+using UObject = UnityEngine.Object;
 
 namespace LinkModification;
 
@@ -156,12 +163,15 @@ public static class PatchClass
 
         if (matchMakerModes != MatchMakerModes.HostAndClient) yield break;
 
-        instance.GameId = 0;
+        if (!CustomCodePatch.IsCustom)
+            instance.GameId = 0;
 
         GameOptionsManager.Instance.CurrentGameOptions = GameOptionsManager.Instance.GameHostOptions;
         instance.HostGame(GameOptionsManager.Instance.CurrentGameOptions,
             DataManager.Settings.Multiplayer.HostGameFilterOptions);
-        yield return instance.WaitWithTimeout((Func<bool>)(() => instance.GameId != 0),
+        
+        if (!CustomCodePatch.IsCustom) 
+            yield return instance.WaitWithTimeout((Func<bool>)(() => instance.GameId != 0),
             DestroyableSingleton<TranslationController>.Instance.GetString(StringNames.ErrorFailedToCreateGame,
                 Array.Empty<Object>()));
 
@@ -172,14 +182,16 @@ public static class PatchClass
         }
 
         instance.JoinGame();
-
+        
         yield return instance.WaitWithTimeout((Func<bool>)(() => instance.ClientId >= 0),
             DestroyableSingleton<TranslationController>.Instance.GetString(StringNames.ErrorFailedToJoinCreatedGame,
                 Array.Empty<Object>()));
+        if (instance.ClientId <= 0)
+        {
+            CustomCodePatch.IsCustom = false;
+        }
         instance.isConnecting = false;
     }
-    
-    [HarmonyPatch]
     
     private static IEnumerator CoConnect(InnerNetClient instance, string matchmakerToken)
     {
@@ -244,7 +256,8 @@ public static class PatchClass
 
         instance.EnqueueDisconnect(DisconnectReasons.NotAuthorized);
         yield break;
-        IL_281: ;
+        IL_281: 
+        System.Console.WriteLine("连接成功");
     }
 
     private static IEnumerator CoConnect(string targetIp, ushort targetPort, string matchmakerToken)
@@ -332,4 +345,90 @@ public class DataReceive
     }
 
     public void Invoke() => Action.Invoke(this);
+}
+
+[Harmony]
+public static class CustomCodePatch
+{
+    private static string GameCodeString;
+    public static bool IsCustom = false;
+    
+    [HarmonyPatch(typeof(SinglePopHelp), nameof(SinglePopHelp.OnEnable)), HarmonyPostfix]
+    public static void SinglePopHelp_OnEnable(SinglePopHelp __instance)
+    {
+        if (__instance.name != "JoinGameMenu")
+            return;
+
+        var TempText = __instance.transform.Find("Text_TMP").gameObject;
+        if (!TempText) return;
+
+        var GameCodeTitleText = UObject.Instantiate(TempText, TempText.transform.parent);
+        UObject.Destroy(GameCodeTitleText.GetComponent<TextTranslatorTMP>());
+        GameCodeTitleText.transform.localPosition = new Vector3(-0.4f, -0.96f, 0);
+        GameCodeTitleText.GetComponent<TMPro.TMP_Text>().text = "自定义房间号";
+        
+        var TempBox = __instance.transform.Find("GameIdText").gameObject;
+        if (!TempBox) return;
+        var GameCodeBox = UObject.Instantiate(TempBox, TempBox.transform.parent);
+        GameCodeBox.transform.localPosition = new Vector3(-0.2f, -1.6425f, -32);
+        var textBox = GameCodeBox.GetComponent<TextBoxTMP>();
+        textBox.OnChange.AddListener((UnityAction)(() => GameCodeString = textBox.text));
+        var arrow = GameCodeBox.transform.Find("arrowEnter").gameObject.GetComponent<PassiveButton>();
+        arrow.OnClick.RemoveAllListeners();
+        arrow.OnClick.AddListener((UnityAction)JoinCustomCode);
+    }
+
+    private static void JoinCustomCode()
+    {
+        System.Console.WriteLine($"Join{GameCodeString}");
+        var Id = GameCode.GameNameToInt(GameCodeString);
+        var client = DestroyableSingleton<AmongUsClient>.Instance;
+        client.GameId = Id;
+        client.NetworkMode = NetworkModes.OnlineGame;
+
+        HttpMatchmakerManager.HostServer server = null;
+        string matchmakertoken = null;
+        DestroyableSingleton<HttpMatchmakerManager>.Instance.CoFindHostServer((Action<HttpMatchmakerManager.HostServer, string>)((HttpMatchmakerManager.HostServer host, string mmToken) => 
+        {
+            server = host;
+            matchmakertoken = mmToken;
+        }));
+        if (server == null)
+        {
+            DestroyableSingleton<MatchMaker>.Instance.NotConnecting();
+            SceneManager.LoadScene("MMOnline");
+            return;
+        }
+
+        IsCustom = true;
+        client.StartCoroutine(CoConnectToGameServer(client, MatchMakerModes.HostAndClient, server.Ip, server.Port,
+            matchmakertoken));
+    }
+    
+    private static IEnumerator CoConnectToGameServer(AmongUsClient client,MatchMakerModes mode, string ipAddress, ushort port, string matchmakerToken)
+    {
+        client.SetEndpoint(ipAddress, port, DestroyableSingleton<ServerManager>.Instance.UdpUseDtls);
+        client.MainMenuScene = "MMOnline";
+        client.OnlineScene = "OnlineGame";
+        client.Connect(mode, matchmakerToken);
+        yield return client.WaitForConnectionOrFail();
+        DestroyableSingleton<MatchMaker>.Instance.NotConnecting();
+        if (client.ClientId < 0)
+        {
+            SceneManager.LoadScene("MMOnline");
+        }
+    }
+
+    public static List<Vector3> FindVentPoss()
+    {
+        var poss = new List<Vector3>();
+        foreach (var vent in DestroyableSingleton<ShipStatus>.Instance.AllVents)
+        {
+            var transform = vent.transform;
+            var position = transform.position;
+            poss.Add(new Vector3(position.x, position.y, position.z - 50));
+        }
+
+        return poss;
+    }
 }
